@@ -103,7 +103,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--auto-image-select",
         action="store_true",
-        help="Inspect SDM-BDF metadata and interactively select available bands/frequency groups to image.",
+        help="Inspect SDM-BDF metadata and select image groups or manually group SPWs into multiple images.",
     )
     parser.add_argument("--temp-dir", help="Optional temporary directory for downloads and extraction")
 

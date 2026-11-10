@@ -54,7 +54,7 @@ def build_image_options(
     if split not in {"whole", "halves", "both"}:
         raise ValueError(f"Unsupported auto-image split value: {split}")
 
-    bands: Dict[str, List[Tuple[int, float]]] = {}
+    bands: Dict[str, List[Tuple[int, str, float]]] = {}
     target_ids = None if target_spw_ids is None else {int(spw_id) for spw_id in target_spw_ids}
     windows_to_use = (
         windows
@@ -66,11 +66,11 @@ def build_image_options(
         if use_single_band and band != single_band:
             continue
         if band:
-            bands.setdefault(band, []).append((spw_id, frequency_hz / 1e9))
+            bands.setdefault(band, []).append((spw_id, name, frequency_hz / 1e9))
 
     options = []
     for band, band_windows in bands.items():
-        band_windows.sort(key=lambda window: (window[1], window[0]))
+        band_windows.sort(key=lambda window: (window[2], window[0]))
         count = len(band_windows)
         lower = band_windows[: count // 2]
         upper = band_windows[count // 2 :]
@@ -83,24 +83,99 @@ def build_image_options(
         for group_name, group_windows in groups:
             if not group_windows:
                 continue
-            spw_ids, frequencies = zip(*group_windows)
+            spw_ids = [window[0] for window in group_windows]
+            frequencies = [window[2] for window in group_windows]
             options.append(
                 {
                     "band": band,
                     "split": group_name,
                     "frequency_ghz": round(sum(frequencies) / len(frequencies), 2),
                     "spws": ",".join(str(spw_id) for spw_id in sorted(spw_ids)),
+                    "spw_details": [
+                        {
+                            "id": spw_id,
+                            "name": name,
+                            "frequency_ghz": round(frequency_ghz, 4),
+                            "band": band,
+                        }
+                        for spw_id, name, frequency_ghz in group_windows
+                    ],
                 }
             )
 
     return sorted(options, key=lambda option: (option["frequency_ghz"], option["band"], option["split"]))
 
 
+def _prompt_for_manual_image_options(options: Sequence[dict]) -> List[dict]:
+    available_spws = {}
+    for option in options:
+        for spw in option.get("spw_details", []):
+            available_spws[spw["id"]] = spw
+
+    if not available_spws:
+        raise RuntimeError("No spectral-window details are available for manual image selection.")
+
+    print("Manual mode: enter a comma-separated SPW ID list for each image.")
+    selected = []
+    while True:
+        try:
+            response = input(
+                f"SPWs for image {len(selected) + 1} (comma-separated, or 'done' to finish): "
+            ).strip()
+        except EOFError as exc:
+            raise RuntimeError(
+                "Auto-image product selection needs an interactive terminal; rerun without "
+                "--auto-image-select or provide selections in config.yaml."
+            ) from exc
+
+        if response.lower() == "done":
+            if selected:
+                return selected
+            print("Enter at least one SPW group before finishing.")
+            continue
+
+        try:
+            spw_ids = [int(value.strip()) for value in response.split(",")]
+        except ValueError:
+            spw_ids = []
+
+        if not spw_ids or len(spw_ids) != len(set(spw_ids)):
+            print("Enter one or more distinct SPW IDs separated by commas.")
+            continue
+        if any(spw_id not in available_spws for spw_id in spw_ids):
+            print(
+                "Unknown SPW ID. Choose from: "
+                + ", ".join(str(spw_id) for spw_id in sorted(available_spws))
+                + "."
+            )
+            continue
+
+        spws = [available_spws[spw_id] for spw_id in spw_ids]
+        bands = {spw["band"] for spw in spws}
+        if len(bands) != 1:
+            print("Each image group must contain SPWs from only one VLA band.")
+            continue
+
+        band = next(iter(bands))
+        selected.append(
+            {
+                "band": band,
+                "split": f"manual-{len(selected) + 1}",
+                "frequency_ghz": round(
+                    sum(spw["frequency_ghz"] for spw in spws) / len(spws), 2
+                ),
+                "spws": ",".join(str(spw_id) for spw_id in sorted(spw_ids)),
+                "spw_details": sorted(spws, key=lambda spw: spw["id"]),
+                "manual": True,
+            }
+        )
+
+
 def prompt_for_image_options(options: Sequence[dict]) -> List[dict]:
     if not options:
         raise RuntimeError("No supported VLA bands or frequency groups were found in the dataset metadata.")
 
-    print("Available auto-image products:")
+    print("Available auto-image products (SPW ID, name, and center frequency):")
     for index, option in enumerate(options, start=1):
         split_label = {"lower": "lower half", "upper": "upper half", "all": "whole band"}[
             option["split"]
@@ -109,11 +184,17 @@ def prompt_for_image_options(options: Sequence[dict]) -> List[dict]:
             f"  {index}. {option['band']} - {split_label} "
             f"({option['frequency_ghz']:.2f} GHz)"
         )
+        if option.get("spw_details"):
+            spw_details = "; ".join(
+                f"{spw['id']} ({spw['name'] or 'unnamed'}, {spw['frequency_ghz']:.4f} GHz)"
+                for spw in option["spw_details"]
+            )
+            print(f"     SPWs: {spw_details}")
 
     while True:
         try:
             response = input(
-                "Select products by number (comma-separated), or 'all': "
+                "Select products by number (comma-separated), 'all', or 'manual': "
             ).strip()
         except EOFError as exc:
             raise RuntimeError(
@@ -123,6 +204,8 @@ def prompt_for_image_options(options: Sequence[dict]) -> List[dict]:
 
         if response.lower() == "all":
             return list(options)
+        if response.lower() in {"m", "manual"}:
+            return _prompt_for_manual_image_options(options)
 
         try:
             indices = [int(value.strip()) for value in response.split(",")]
@@ -140,4 +223,4 @@ def prompt_for_image_options(options: Sequence[dict]) -> List[dict]:
                     seen.add(key)
             return selected
 
-        print(f"Enter 'all' or numbers from 1 to {len(options)}.")
+        print(f"Enter 'all', 'manual', or numbers from 1 to {len(options)}.")

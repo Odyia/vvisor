@@ -93,7 +93,7 @@ After requesting data and receiving the link, you can run vvisor.
 
 **Important:** ASC can create many Slurm jobs, and A-configuration runs can take around 7-10 days. With common settings (`split=both` across multiple bands), you may see around 12 frequency jobs plus one cleanup job. Resources are limited, so avoid running multiple large ASC datasets at once. As a rule of thumb, run only one ASC dataset at a time.
 
-CB typically submits two chained jobs (calibration, then auto-image) when auto-image is available, and it is usually done within a day.
+CB typically submits two chained jobs (calibration, then auto-image) when auto-image is available, and it is usually done within a day. After calibration exports and renames the final `.ms`, the calibration job writes a CASA `listfile.txt` in the CB work directory.
 
 To run, enter the directory:
 `cd vvisor/`
@@ -138,7 +138,7 @@ Local paths bypass remote URL scanning, but still need the required dataset stru
 python vvisor.py --pipeline cb --url 'your-link-goes-here' --auto-image-select
 python vvisor.py --pipeline auto-image --auto-image-workdir 'CB.project.target.date' --auto-image-select --auto-image-submit
 ```
-The menu lists bands/frequency groups associated with target-intent scans and respects `--auto-image-split`; select one or more numbered products, or `all`. SPWs are resolved from target field/scan metadata rather than assumed numbers. For Measurement Sets, metadata is read using casacore/pyrap when available or through `--auto-image-casa-executable` otherwise.
+The menu lists bands/frequency groups associated with target-intent scans and respects `--auto-image-split`; select one or more numbered products, `all`, or `manual`. In manual mode, enter a comma-separated SPW ID group for each image, then enter `done`. Each image group must use SPWs from one VLA band; SPWs can be reused in separate image groups. SPWs are resolved from target field/scan metadata rather than assumed numbers. For Measurement Sets, metadata is read using casacore/pyrap when available or through `--auto-image-casa-executable` otherwise.
 Images are stored under `images/<image-size>/` in the CB work directory. When point-source fitting is enabled, results are written under `imfit_results/`; the CSV is created when `write_results` is enabled in the auto-image config.
 
 ### Running ASC
@@ -328,7 +328,7 @@ default = 512,
 image_size value written to auto-image-VLA/config.yaml
 
 `--auto-image-select`
-Inspect input metadata and interactively select available bands/frequency groups before imaging. This works for CB and standalone auto-image runs.
+Inspect input metadata and select available bands/frequency groups or manually group SPWs into multiple images before imaging. This works for CB and standalone auto-image runs.
 
 `--auto-image-split`
 default = "both",
