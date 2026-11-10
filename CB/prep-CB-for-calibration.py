@@ -208,6 +208,16 @@ def build_casa_install_pandas_command(casa_executable):
     return f"{quoted_casa} --nogui -c {shlex.quote(python_code)}"
 
 
+def build_listobs_command(casa_executable, measurement_set, listfile):
+    quoted_casa = shlex.quote(casa_executable)
+    python_code = (
+        "from casatasks import listobs;"
+        f"listobs(vis={str(measurement_set)!r}, "
+        f"listfile={str(listfile)!r}, overwrite=True)"
+    )
+    return f"{quoted_casa} --nogui -c {shlex.quote(python_code)}"
+
+
 def build_final_ms_rename_command(target_name, project_code):
     target = shlex.quote(target_name)
     project_prefix = shlex.quote(f"{project_code}.")
@@ -310,6 +320,11 @@ else:
     final_ms_name = f"{workdir_name}.ms"
     project_code = workdir_name.split(".", 1)[0]
 final_ms_rename_command = build_final_ms_rename_command(final_ms_name, project_code)
+listobs_command = build_listobs_command(
+    CASA_EXECUTABLE,
+    workdir / final_ms_name,
+    workdir / "listfile.txt",
+)
 
 script_content = build_slurm_script(
     workdir=workdir,
@@ -327,7 +342,7 @@ script_content = build_slurm_script(
     mail_user=SBATCH_MAIL_USER,
     export_all=SBATCH_EXPORT_ALL,
     module_load=MODULE_LOAD,
-    commands=[calibration_command, final_ms_rename_command],
+    commands=[calibration_command, final_ms_rename_command, listobs_command],
     start_message="Starting CASA non-interactive calibration job",
     complete_message="CASA calibration job complete",
 )

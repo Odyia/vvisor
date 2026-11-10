@@ -165,8 +165,8 @@ def parse_args():
         "--auto-image-select",
         action="store_true",
         help=(
-            "Inspect dataset metadata and interactively select available bands/frequency groups to image. "
-            "Works with CB and standalone auto-image pipelines."
+            "Inspect dataset metadata and select image groups or manually group SPWs into multiple images. "
+            "The prompt lists each SPW's ID, name, and frequency. Works with CB and standalone auto-image pipelines."
         ),
     )
     parser.add_argument(
@@ -726,6 +726,36 @@ def patch_auto_image_output_directory(auto_image_dir: Path) -> None:
     )
     for old, new in replacements:
         helper_text = helper_text.replace(old, new, 1)
+
+    setup_frequency = '''        freq = row["freq [GHz]"]
+        image_label = row.get("image_label")
+        if pd.notna(image_label):
+            freq = f"{freq}GHz_{image_label}"
+        else:
+            freq = f"{freq}GHz"
+'''
+    helper_text = helper_text.replace(
+        '        freq = row["freq [GHz]"]\n',
+        setup_frequency,
+        1,
+    )
+    helper_text = helper_text.replace(
+        '        subdir_name = f"{band}/{freq}GHz"\n',
+        '        subdir_name = f"{band}/{freq}"\n',
+        1,
+    )
+    tclean_frequency = '''        image_label = row.get("image_label")
+        if pd.notna(image_label):
+            freq = f"{row['freq [GHz]']}GHz_{image_label}"
+        else:
+            freq = f"{row['freq [GHz]']}GHz"
+'''
+    helper_text = helper_text.replace(
+        """        freq = f"{row['freq [GHz]']}GHz"
+""",
+        tclean_frequency,
+        1,
+    )
     helper_path.write_text(helper_text, encoding="utf-8")
 
     run_text = run_path.read_text(encoding="utf-8")
