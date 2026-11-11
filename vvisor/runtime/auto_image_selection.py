@@ -1,4 +1,5 @@
 import re
+import textwrap
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 
@@ -175,21 +176,44 @@ def prompt_for_image_options(options: Sequence[dict]) -> List[dict]:
     if not options:
         raise RuntimeError("No supported VLA bands or frequency groups were found in the dataset metadata.")
 
-    print("Available auto-image products (SPW ID, name, and center frequency):")
+    print("Available image groups:")
+    available_spws = {}
     for index, option in enumerate(options, start=1):
         split_label = {"lower": "lower half", "upper": "upper half", "all": "whole band"}[
             option["split"]
         ]
         print(
-            f"  {index}. {option['band']} - {split_label} "
-            f"({option['frequency_ghz']:.2f} GHz)"
+            f"  {index:>2}. {option['band']:<7} {split_label:<10} "
+            f"{option['frequency_ghz']:>6.2f} GHz"
         )
-        if option.get("spw_details"):
-            spw_details = "; ".join(
-                f"{spw['id']} ({spw['name'] or 'unnamed'}, {spw['frequency_ghz']:.4f} GHz)"
-                for spw in option["spw_details"]
+        spw_ids = option.get("spws", "")
+        print(
+            textwrap.fill(
+                f"SPWs: {spw_ids}",
+                width=76,
+                initial_indent="      ",
+                subsequent_indent="            ",
             )
-            print(f"     SPWs: {spw_details}")
+        )
+        for spw in option.get("spw_details", []):
+            available_spws[spw["id"]] = spw
+
+    if available_spws:
+        print("\nSPW details (ID | center GHz | band | name):")
+        for spw_id in sorted(available_spws):
+            spw = available_spws[spw_id]
+            detail = (
+                f"{spw_id:>4} | {spw['frequency_ghz']:>10.4f} | "
+                f"{spw['band']:<7} | {spw['name'] or 'unnamed'}"
+            )
+            wrapped = textwrap.wrap(
+                detail,
+                width=76,
+                subsequent_indent="                         ",
+                break_long_words=True,
+                break_on_hyphens=False,
+            )
+            print("\n".join(wrapped))
 
     while True:
         try:
