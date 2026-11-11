@@ -132,12 +132,12 @@ def _prompt_for_manual_image_options(options: Sequence[dict]) -> List[dict]:
         )
         print("\n".join(wrapped))
 
-    print("Manual mode: enter a comma-separated SPW ID list for each image.")
+    print("Manual mode: enter SPW IDs/ranges (for example, 2~10,12) for each image.")
     selected = []
     while True:
         try:
             response = input(
-                f"SPWs for image {len(selected) + 1} (comma-separated, or 'done' to finish): "
+                f"SPWs for image {len(selected) + 1} (IDs/ranges, or 'done' to finish): "
             ).strip()
         except EOFError as exc:
             raise RuntimeError(
@@ -151,13 +151,24 @@ def _prompt_for_manual_image_options(options: Sequence[dict]) -> List[dict]:
             print("Enter at least one SPW group before finishing.")
             continue
 
+        spw_ids = []
         try:
-            spw_ids = [int(value.strip()) for value in response.split(",")]
+            for value in response.split(","):
+                bounds = value.strip().split("~")
+                if len(bounds) == 1:
+                    spw_ids.append(int(bounds[0]))
+                elif len(bounds) == 2:
+                    start, end = (int(bound.strip()) for bound in bounds)
+                    if start > end:
+                        raise ValueError
+                    spw_ids.extend(range(start, end + 1))
+                else:
+                    raise ValueError
         except ValueError:
             spw_ids = []
 
         if not spw_ids or len(spw_ids) != len(set(spw_ids)):
-            print("Enter one or more distinct SPW IDs separated by commas.")
+            print("Enter distinct SPW IDs/ranges, such as '2~10,12'.")
             continue
         if any(spw_id not in available_spws for spw_id in spw_ids):
             print(
