@@ -116,6 +116,22 @@ def _prompt_for_manual_image_options(options: Sequence[dict]) -> List[dict]:
     if not available_spws:
         raise RuntimeError("No spectral-window details are available for manual image selection.")
 
+    print("\nSPW details (ID | center GHz | band | name):")
+    for spw_id in sorted(available_spws):
+        spw = available_spws[spw_id]
+        detail = (
+            f"{spw_id:>4} | {spw['frequency_ghz']:>10.4f} | "
+            f"{spw['band']:<7} | {spw['name'] or 'unnamed'}"
+        )
+        wrapped = textwrap.wrap(
+            detail,
+            width=76,
+            subsequent_indent="                         ",
+            break_long_words=True,
+            break_on_hyphens=False,
+        )
+        print("\n".join(wrapped))
+
     print("Manual mode: enter a comma-separated SPW ID list for each image.")
     selected = []
     while True:
@@ -177,7 +193,6 @@ def prompt_for_image_options(options: Sequence[dict]) -> List[dict]:
         raise RuntimeError("No supported VLA bands or frequency groups were found in the dataset metadata.")
 
     print("Available image groups:")
-    available_spws = {}
     for index, option in enumerate(options, start=1):
         split_label = {"lower": "lower half", "upper": "upper half", "all": "whole band"}[
             option["split"]
@@ -195,25 +210,6 @@ def prompt_for_image_options(options: Sequence[dict]) -> List[dict]:
                 subsequent_indent="            ",
             )
         )
-        for spw in option.get("spw_details", []):
-            available_spws[spw["id"]] = spw
-
-    if available_spws:
-        print("\nSPW details (ID | center GHz | band | name):")
-        for spw_id in sorted(available_spws):
-            spw = available_spws[spw_id]
-            detail = (
-                f"{spw_id:>4} | {spw['frequency_ghz']:>10.4f} | "
-                f"{spw['band']:<7} | {spw['name'] or 'unnamed'}"
-            )
-            wrapped = textwrap.wrap(
-                detail,
-                width=76,
-                subsequent_indent="                         ",
-                break_long_words=True,
-                break_on_hyphens=False,
-            )
-            print("\n".join(wrapped))
 
     while True:
         try:
