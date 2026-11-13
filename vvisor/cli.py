@@ -177,9 +177,9 @@ def parse_args():
         help="split value written to auto-image-VLA/config.yaml during bootstrap (default: both).",
     )
     parser.add_argument(
-        "--auto-image-submit",
+        "--auto-image-local",
         action="store_true",
-        help="Submit run_auto_image.sh with sbatch instead of running auto-image CASA directly.",
+        help="Run auto-image CASA directly instead of submitting run_auto_image.sh via Slurm (Slurm is the default).",
     )
     parser.add_argument(
         "--auto-image-casa-executable",
@@ -271,7 +271,7 @@ def normalize_boolean_flag_values(inputs):
         "--cb-skip-submit": False,
         "--cb-submit": True,
         "--cb-asc-wait-for-cb": True,
-        "--auto-image-submit": True,
+        "--auto-image-local": True,
         "--auto-image-select": True,
         "--allow-url-type-mismatch": True,
         "--auto-image-allow-cb-url": True,
@@ -1470,7 +1470,7 @@ def run_auto_image_workflow(args: argparse.Namespace, source_url: Optional[str] 
         )
         update_auto_image_selection(config_path, selected_images)
 
-    if args.auto_image_submit:
+    if not args.auto_image_local:
         submit_script = workdir / "run_auto_image.sh"
         if not submit_script.exists():
             submit_script = write_auto_image_submit_script(
@@ -1815,7 +1815,11 @@ def require_sbatch_for_submission(args: argparse.Namespace) -> None:
             and not args.asc_no_casa
             and not args.asc_dry_run
         )
-        or (args.pipeline == "auto-image" and args.auto_image_submit)
+        or (
+            args.pipeline in {"auto-image", "cb"}
+            and not args.auto_image_local
+            and (args.pipeline == "auto-image" or not args.cb_submit)
+        )
     )
     if submission_required and shutil.which("sbatch") is None:
         sys.exit(
@@ -1879,7 +1883,6 @@ def main() -> None:
 
         print("Running standalone auto-image after CB workflow completion.")
         args.auto_image_workdir = str(cb_workdir)
-        args.auto_image_submit = False
         run_auto_image_workflow(args)
         print("CB pipeline completed successfully (including standalone auto-image).")
         return

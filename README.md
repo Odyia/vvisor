@@ -120,23 +120,23 @@ After CB calibration is submitted, the pipeline chains auto-image automatically.
 ```
 python vvisor.py --pipeline auto-image --auto-image-workdir 'CB.project.target.date' --auto-image-size 2700
 ```
-For large images, add `--auto-image-submit` to submit imaging to Slurm. The CB work directory is still reused:
+Standalone auto-image runs submit to Slurm by default. Add `--auto-image-local` to run CASA directly in the current session instead. The CB work directory is still reused:
 ```
-python vvisor.py --pipeline auto-image --auto-image-workdir 'CB.project.target.date' --auto-image-size 2700 --auto-image-submit
+python vvisor.py --pipeline auto-image --auto-image-workdir 'CB.project.target.date' --auto-image-size 2700 --auto-image-local
 ```
 
 As a fallback for a standalone calibrated `.ms` that is not in a CB work directory, use `--auto-image-ms-path`. This bootstraps a separate `AUTO_IMAGE.*` work directory:
 ```
-python vvisor.py --pipeline auto-image --auto-image-ms-path 'path-to-calibrated-ms' --auto-image-submit
+python vvisor.py --pipeline auto-image --auto-image-ms-path 'path-to-calibrated-ms'
 ```
 You can also provide a URL containing a calibrated `.ms`; the wrapper stages it in a separate auto-image work directory. CB observation/SDM-BDF URLs are not valid auto-image inputs; use `--pipeline cb` to calibrate those first. If URL scanning misclassifies a source or fails, retry with `--allow-url-type-mismatch`.
 ```
 python vvisor.py --pipeline auto-image --url 'your-link-goes-here'
 ```
-Local paths bypass remote URL scanning, but still need the required dataset structure. Add `--auto-image-select` to inspect metadata and choose image products before running or submitting. For a CB work directory, the selection is stored in the auto-image config before the imaging job runs:
+Local paths bypass remote URL scanning, but still need the required dataset structure. Add `--auto-image-select` to inspect metadata and choose image products before imaging. For a CB work directory, the selection is stored in the auto-image config before the imaging job runs:
 ```
 python vvisor.py --pipeline cb --url 'your-link-goes-here' --auto-image-select
-python vvisor.py --pipeline auto-image --auto-image-workdir 'CB.project.target.date' --auto-image-select --auto-image-submit
+python vvisor.py --pipeline auto-image --auto-image-workdir 'CB.project.target.date' --auto-image-select
 ```
 The menu lists bands/frequency groups associated with target-intent scans and respects `--auto-image-split`; select one or more numbered products, `all`, or `manual`. The regular menu shows each product's SPW IDs. Choose `manual` to display the SPW inventory with IDs, center frequencies, bands, and names. Then enter a comma-separated SPW group for each image and enter `done` when finished. Inclusive ranges are supported with `~`, so `2~10,12` selects SPWs 2 through 10 and 12 for one image. Each group must use SPWs from one VLA band; an SPW can be reused in separate image groups. SPWs are resolved from target field/scan metadata rather than assumed numbers. For Measurement Sets, metadata is read using casacore/pyrap when available or through `--auto-image-casa-executable` otherwise.
 Images are stored under `images/<image-size>/` in the CB work directory. When point-source fitting is enabled, results are written under `imfit_results/`; the CSV is created when `write_results` is enabled in the auto-image config.
@@ -335,8 +335,8 @@ default = "both",
 choices = ["whole", "halves", "both"],
 split value written to auto-image-VLA/config.yaml
 
-`--auto-image-submit`
-Submit auto-image via sbatch run_auto_image.sh instead of running CASA directly
+`--auto-image-local`
+Run auto-image CASA directly in the current session instead of submitting `run_auto_image.sh` via Slurm. Auto-image is submitted via Slurm by default.
     
 `--auto-image-casa-executable`
 default = "casa-pipe",
