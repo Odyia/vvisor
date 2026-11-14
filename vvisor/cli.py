@@ -827,18 +827,40 @@ def filter_image_options(df_store, selected_images):
     if not selected_images:
         return df_store
 
-    selected_keys = {
+    def parse_spw_ids(value):
+        return frozenset(
+            int(spw_id.strip())
+            for spw_id in str(value).split(",")
+            if spw_id.strip()
+        )
+
+    selected_spw_keys = {
+        (option["band"], option["split"], parse_spw_ids(option["spws"]))
+        for option in selected_images
+        if option.get("spws")
+    }
+    selected_frequency_keys = {
         (option["band"], option["split"], round(float(option["frequency_ghz"]), 2))
         for option in selected_images
+        if not option.get("spws")
     }
     mask = [
-        (row["band"], row["split"], round(float(row["freq [GHz]"]), 2)) in selected_keys
+        (
+            row["band"],
+            row["split"],
+            parse_spw_ids(row["spws"]),
+        ) in selected_spw_keys
+        or (
+            row["band"],
+            row["split"],
+            round(float(row["freq [GHz]"]), 2),
+        ) in selected_frequency_keys
         for _, row in df_store.iterrows()
     ]
     filtered = df_store.loc[mask].reset_index(drop=True)
     if filtered.empty:
         raise ValueError(
-            "None of the selected bands/frequency groups are present in the Measurement Set listobs metadata."
+            "None of the selected band/split/SPW groups are present in the Measurement Set listobs metadata."
         )
     return filtered
 '''

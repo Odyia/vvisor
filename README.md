@@ -139,7 +139,7 @@ python vvisor.py --pipeline cb --url 'your-link-goes-here' --auto-image-select
 python vvisor.py --pipeline auto-image --auto-image-workdir 'CB.project.target.date' --auto-image-select
 ```
 The menu lists bands/frequency groups associated with target-intent scans and respects `--auto-image-split`; select one or more numbered products, `all`, or `manual`. The regular menu shows each product's SPW IDs. Choose `manual` to display the SPW inventory with IDs, center frequencies, bands, and names. Then enter a comma-separated SPW group for each image and enter `done` when finished. Inclusive ranges are supported with `~`, so `2~10,12` selects SPWs 2 through 10 and 12 for one image. Each group must use SPWs from one VLA band; an SPW can be reused in separate image groups. SPWs are resolved from target field/scan metadata rather than assumed numbers. For Measurement Sets, metadata is read using casacore/pyrap when available or through `--auto-image-casa-executable` otherwise.
-Images are stored under `images/<image-size>/` in the CB work directory. When point-source fitting is enabled, results are written under `imfit_results/`; the CSV is created when `write_results` is enabled in the auto-image config.
+Images are stored under `images/<image-size>/` in the CB work directory. When point-source fitting is enabled, results are written under `imfit_results/`; the CSV is created when `write_results` is enabled in the auto-image config. By default point-source fitting is true so `imfit_results.csv` will be generated but, it can be turned off if needed.
 
 ### Running ASC
 For ASC:
