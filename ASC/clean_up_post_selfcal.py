@@ -3,7 +3,6 @@ import shutil
 import os
 from pathlib import Path
 import re
-import pandas as pd
 from datetime import datetime
 
 
@@ -93,6 +92,8 @@ def create_imfitresults_csv(final_files_directory: Path, image_paths):
         print(f"No copied final image products were supplied from {final_files_directory}; skipping point-source fit summary.")
         return None
 
+    import pandas as pd
+
     fit_point_source_basic = _load_point_source_fitters()
     fit_results = []
     original_cwd = Path.cwd()
@@ -154,6 +155,94 @@ def find_final_products(source_dir: Path, final_images_only: bool):
     return final_files, final_images
 
 
+def find_candidate_images(source_dir: Path):
+    """Return images from the latest available self-cal iteration or image stage."""
+    candidates = sorted(
+        path
+        for path in source_dir.rglob("*.image.tt0")
+        if (path.is_dir() or path.is_file())
+        and not re.search(r"_EVLA_[A-Z0-9]+_(?:\d+_)?final(?:_|\.image\.tt0$)", path.name)
+    )
+    iteration_by_path = {}
+    for candidate in candidates:
+        match = re.search(
+            r"_EVLA_[A-Z0-9]+_(?:\d+_)?(?P<solint>.+)_(?P<iteration>\d+)"
+            r"(?:_post)?\.image\.tt0$",
+            candidate.name,
+        )
+        if match:
+            iteration_by_path[candidate] = int(match.group("iteration"))
+
+    if iteration_by_path:
+        latest_iteration = max(iteration_by_path.values())
+        return [
+            candidate
+            for candidate in candidates
+            if iteration_by_path.get(candidate) == latest_iteration
+        ]
+
+    initial_images = [
+        candidate
+        for candidate in candidates
+        if re.search(r"_EVLA_[A-Z0-9]+_(?:\d+_)?initial\.image\.tt0$", candidate.name)
+    ]
+    if initial_images:
+        return initial_images
+
+    dirty_images = [
+        candidate
+        for candidate in candidates
+        if re.search(r"_EVLA_[A-Z0-9]+_(?:\d+_)?dirty\.image\.tt0$", candidate.name)
+    ]
+    if dirty_images:
+        return dirty_images
+
+    return [max(candidates, key=lambda path: path.stat().st_mtime_ns)] if candidates else []
+
+
+def band_failed(source_dir: Path, final_images):
+    """Detect explicit failures from new jobs and missing final images from older jobs."""
+    return (source_dir / ".auto_selfcal_failed").is_file() or not final_images
+
+
+def copy_product(source: Path, destination: Path):
+    if destination.exists():
+        if destination.is_file():
+            destination.unlink()
+        else:
+            shutil.rmtree(destination)
+    if source.is_file():
+        shutil.copy2(source, destination)
+    elif source.is_dir():
+        shutil.copytree(source, destination)
+
+
+def collect_candidate_images(source_dir: Path, destination_dir: Path, frequency):
+    """Copy a failed band's intermediate image products and write a status note."""
+    if destination_dir.exists():
+        shutil.rmtree(destination_dir)
+    destination_dir.mkdir(parents=True)
+
+    candidates = find_candidate_images(source_dir)
+    for candidate in candidates:
+        copy_product(candidate, destination_dir / candidate.name)
+
+    failure_note = destination_dir / "failure.txt"
+    with failure_note.open("w", encoding="utf-8") as note:
+        note.write(f"No completed final image was collected for {frequency} GHz.\n")
+        failure_marker = source_dir / ".auto_selfcal_failed"
+        if failure_marker.is_file():
+            note.write("The auto_selfcal job recorded a non-zero exit status: ")
+            note.write(failure_marker.read_text(encoding="utf-8").strip() or "unknown")
+            note.write("\n")
+        else:
+            note.write("No final image was found; this may indicate an older job or an incomplete run.\n")
+        note.write(f"Collected {len(candidates)} image(s) from the latest available candidate stage.\n")
+        note.write(f"Check the auto_selfcal job .out and .err files in {source_dir} for details.\n")
+
+    return candidates
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Collect final files from frequency folders into a final_files directory."
@@ -187,91 +276,88 @@ def parse_args():
     return parser.parse_args()
 
 
-args = parse_args()
-# Normalize once so later path operations always use pathlib semantics.
-root_dir = Path(args.root_dir or os.getcwd())
-root_dir = Path(root_dir).expanduser()
-prefix_string = args.prefix
-final_images_only = not args.all_final_products
-apply_calibrations = args.apply_calibrations
-concat_final_ms = args.concat_final_ms
+def main():
+    args = parse_args()
+    # Normalize once so later path operations always use pathlib semantics.
+    root_dir = Path(args.root_dir or os.getcwd()).expanduser()
+    prefix_string = args.prefix
+    final_images_only = not args.all_final_products
+    apply_calibrations = args.apply_calibrations
+    concat_final_ms = args.concat_final_ms
 
-if not root_dir.is_dir():
-    raise FileNotFoundError(
-        f"root_dir does not exist: {root_dir}.\n"
-        "Please run the script from the observation root or pass the correct path."
-    )
+    if not root_dir.is_dir():
+        raise FileNotFoundError(
+            f"root_dir does not exist: {root_dir}.\n"
+            "Please run the script from the observation root or pass the correct path."
+        )
 
-# Frequencies are discovered dynamically because observations may cover only a subset
-# of bands, so their band cannot be inferred from their position in this list.
-frequencies = get_frequencies_from_dirs(root_dir)
+    # Frequencies are discovered dynamically because observations may cover only a subset
+    # of bands, so their band cannot be inferred from their position in this list.
+    frequencies = get_frequencies_from_dirs(root_dir)
 
-final_files_directory = f"{root_dir}/final_files"
-os.makedirs(final_files_directory, exist_ok=True)
+    final_files_directory = root_dir / "final_files"
+    final_files_directory.mkdir(parents=True, exist_ok=True)
 
-list_of_mses = []
-collected_final_image_paths = []
-for freq in frequencies:
-    
-    working_directory = f"{root_dir}/{freq}GHz"
-    source_dir = Path(working_directory)
-    destin_dir = Path(f"{final_files_directory}/{freq}GHz")
-    destin_dir.mkdir(exist_ok=True)
+    list_of_mses = []
+    collected_final_image_paths = []
+    for freq in frequencies:
+        working_directory = root_dir / f"{freq}GHz"
+        source_dir = Path(working_directory)
+        destin_dir = final_files_directory / f"{freq}GHz"
+        destin_dir.mkdir(exist_ok=True)
 
-    final_files, final_images = find_final_products(source_dir, final_images_only)
+        final_files, final_images = find_final_products(source_dir, final_images_only)
+        if band_failed(source_dir, final_images):
+            candidate_dir = destin_dir / "candidates"
+            candidates = collect_candidate_images(source_dir, candidate_dir, freq)
+            print(
+                f"WARNING: {freq} GHz band did not produce a completed final image; "
+                f"saved {len(candidates)} candidate image(s) to {candidate_dir}"
+            )
+        else:
+            print(f"Copying {len(final_files)} final files to {destin_dir}")
+            for final_file in final_files:
+                destination = destin_dir / final_file.name
+                copy_product(final_file, destination)
+                if final_file.name.endswith(".image.tt0") and (destination.is_dir() or destination.is_file()):
+                    collected_final_image_paths.append(destination.resolve())
+            print("Done")
 
-    print(f"Copying {len(final_files)} final files to {destin_dir}")
-    def copy_tree_compat(src, dst):
-        if dst.exists():
-            if dst.is_file():
-                dst.unlink()
-            else:
-                shutil.rmtree(dst)
-        shutil.copytree(src, dst)
+        # apply calibrations to each measurement set
+        if apply_calibrations:
+            print("Applying calibrations to original ms")
+            os.chdir(working_directory)
+            execfile(f"{working_directory}/applycal_to_orig_MSes.py")
+            print(f"Done applying calibrations for {freq}")
+            os.chdir(root_dir)
 
-    for ff in final_files:
-        destination = destin_dir / ff.name
-        if ff.is_file():
-            shutil.copy2(ff, destination)
-        elif ff.is_dir():
-            copy_tree_compat(ff, destination)
-        if ff.name.endswith(".image.tt0") and (destination.is_dir() or destination.is_file()):
-            collected_final_image_paths.append(destination.resolve())
-    print("Done")
+        original_mses = sorted(source_dir.glob(f"*.{freq}GHz_target.ms"))
+        list_of_mses.extend(str(ms_path) for ms_path in original_mses)
 
-    # apply calibrations to each measurement set
-    if apply_calibrations:
-        print("Applying calibrations to original ms")
-        os.chdir(working_directory)
-        execfile(f"{working_directory}/applycal_to_orig_MSes.py")
-        print(f"Done applying calibrations for {freq}")
-        os.chdir(root_dir)
+    # concat into single ms
+    if concat_final_ms:
+        print("Creating final_selfcal measurement set")
+        final_ms_path = root_dir / f"{prefix_string}.auto_selfcal.final.ms"
 
-    original_mses = sorted(source_dir.glob(f"*.{freq}GHz_target.ms"))
-    list_of_mses.extend(str(ms_path) for ms_path in original_mses)
+        # check if it exists first:
+        if not final_ms_path.exists():
+            concat(vis=list_of_mses, concatvis=str(final_ms_path))
+            print(f"Created final self_cal ms {final_ms_path}")
+        else:
+            print(f"Final self_cal ms already exists at {final_ms_path}")
 
-# concat into single ms
-if concat_final_ms:
-    print("Creating final_selfcal measurement set")
-    final_ms_path = f"{root_dir}/{prefix_string}.auto_selfcal.final.ms"
-    
-    # check if it exists first:
-    if not os.path.exists(final_ms_path):
-        concat(vis=list_of_mses, concatvis=final_ms_path)
-        print(f"Created final self_cal ms {final_ms_path}")
-    else:
-        print(f"Final self_cal ms already exists at {final_ms_path}")
-    
-    # move to final images
-    source_file = Path(final_ms_path)
-    destination_dir = Path(final_files_directory)
-    destination_dir.mkdir(parents=True, exist_ok=True)
-    if not os.path.exists(str(destination_dir / source_file.name)):
-        shutil.move(str(source_file), str(destination_dir / source_file.name))
-        print(f"Moved final self_cal ms to final_files directory")
+        # move to final images
+        destination = final_files_directory / final_ms_path.name
+        if not destination.exists():
+            shutil.move(str(final_ms_path), str(destination))
+            print("Moved final self_cal ms to final_files directory")
 
-# Fit the exact tt0 images copied into final_files, after all frequency folders are collected.
-print(f"Collected {len(collected_final_image_paths)} final images for imfit:")
-for image_path in collected_final_image_paths:
-    print(f"  {image_path}")
-create_imfitresults_csv(Path(final_files_directory), collected_final_image_paths)
+    # Fit the exact tt0 images copied into final_files, after all frequency folders are collected.
+    print(f"Collected {len(collected_final_image_paths)} final images for imfit:")
+    for image_path in collected_final_image_paths:
+        print(f"  {image_path}")
+    create_imfitresults_csv(final_files_directory, collected_final_image_paths)
+
+
+if __name__ == "__main__":
+    main()

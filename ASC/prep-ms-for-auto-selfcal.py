@@ -752,6 +752,8 @@ for i in range(len(split_ms_directories)):
 {SBATCH_MAIL_DIRECTIVES}
 
 echo "about to run auto_selfcal.py"
+rm -f .auto_selfcal_failed
+trap 'status=$?; if [ "$status" -ne 0 ]; then printf "auto_selfcal exited with status %s\\n" "$status" > .auto_selfcal_failed; fi' EXIT
 xvfb-run -d /home/casa/packages/RHEL8/release/casa-6.6.4-34-py3.8.el8/bin/mpicasa /home/casa/packages/RHEL8/release/casa-6.6.4-34-py3.8.el8/bin/casa --nogui -c auto_selfcal.py
 """
 
