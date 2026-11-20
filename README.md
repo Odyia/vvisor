@@ -152,7 +152,7 @@ For an A-configuration ASC run, use `--a-config`. This adjusts L/S-band resource
 ```
 python vvisor.py --pipeline asc --url 'your-link-goes-here' --a-config
 ```
-The generated per-band self-calibration jobs use the pipeline's default Slurm requests unless overridden with `--asc-sbatch-time`, `--asc-sbatch-mem`, and `--asc-sbatch-cpus`. The CPU option sets `--ntasks-per-node`; each job still requests one node. For example:
+The generated per-band `auto_selfcal` jobs use the pipeline's default Slurm requests unless overridden with `--asc-sbatch-time`, `--asc-sbatch-mem`, and `--asc-sbatch-cpus`. These overrides apply only to the self-calibration jobs, not the prep-splitting or cleanup jobs. The CPU option sets `--ntasks-per-node`; each job still requests one node. For example:
 ```
 python vvisor.py --pipeline asc --url 'your-link-goes-here' --asc-sbatch-time 3-00:00:00 --asc-sbatch-mem 160G --asc-sbatch-cpus 12
 ```
