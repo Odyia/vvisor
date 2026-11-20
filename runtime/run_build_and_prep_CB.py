@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
 
+"""CB orchestration wrapper for build, prep, metadata, and submission stages.
+
+This module resolves missing metadata, invokes build_CB.py, runs the CB preparation
+script, and optionally submits the SLURM jobs. It is intentionally a thin wrapper
+around repository scripts rather than the implementation of CASA itself.
+"""
+
 import argparse
 import json
 import logging
@@ -44,6 +51,8 @@ def _safe_slug(value: Optional[str]) -> str:
 
 
 def write_metadata_log(kind: str, metadata: dict, logger: Optional[logging.Logger] = None, source: Optional[str] = None) -> None:
+    # Store metadata decisions as auditable JSON snapshots for later debugging,
+    # without making metadata-log failures block the pipeline.
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     file_name = f"{timestamp}_{_safe_slug(kind)}.json"
     output_path = metadata_logs_dir() / file_name
@@ -262,6 +271,8 @@ def run_metadata_scraper(script_dir: Path, source_path: Path, project_code_overr
 
 
 def infer_metadata_from_remote_url(url: str, logger: logging.Logger) -> dict:
+    # Remote inference starts with URL hints, then downloads XML only from the
+    # observation directory. Unknown values are normalized for the next validation step.
     parsed = urlparse(url)
     path_parts = [part for part in parsed.path.split("/") if part]
 
@@ -347,6 +358,7 @@ def infer_metadata_from_remote_url(url: str, logger: logging.Logger) -> dict:
 
 
 def infer_metadata_from_source(script_dir: Path, source: str, logger: logging.Logger) -> dict:
+    # One metadata interface handles HTTP sources and local SDM-BDF roots.
     source_value = source.strip()
     if not source_value:
         raise ValueError("No source path or URL provided for metadata inference")
@@ -374,6 +386,8 @@ def run_build(
     args: argparse.Namespace,
     logger: logging.Logger,
 ) -> None:
+    # Forward only the resolved metadata/config to build_CB.py; this keeps source
+    # discovery and workdir assembly outside of the prep/submission stages.
     build_script = script_dir / "build_CB.py"
     if not build_script.exists():
         raise FileNotFoundError(f"Could not find build_CB.py at {build_script}")
@@ -438,6 +452,8 @@ def run_submit(workdir: Path, args: argparse.Namespace, logger: logging.Logger) 
 
 
 def main() -> None:
+    # Dispatch order: normalize inputs, infer missing metadata, build, prepare,
+    # and submit only after the workdir and prep script are ready.
     args = normalize_cli_inputs(parse_args())
     logger = configure_logging(args.verbose)
     logger.info("Starting CB build+prep runner")

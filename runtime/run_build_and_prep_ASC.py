@@ -1,3 +1,9 @@
+"""ASC orchestration wrapper for local and remote Measurement Set workflows.
+
+The runner resolves metadata, prepares or stages a workdir, patches the ASC prep
+script, and chooses between CASA/non-CASA and interactive/SLURM execution.
+"""
+
 import argparse
 import json
 import logging
@@ -39,6 +45,7 @@ def _safe_slug(value: Optional[str]) -> str:
 
 
 def write_metadata_log(kind: str, metadata: dict, logger: Optional[logging.Logger] = None, source: Optional[str] = None) -> None:
+    # Metadata snapshots are diagnostics, so logging failures warn and continue.
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     file_name = f"{timestamp}_{_safe_slug(kind)}.json"
     output_path = metadata_logs_dir() / file_name
@@ -928,6 +935,8 @@ def patch_and_optionally_run(
     source_name: str,
     logger: logging.Logger,
 ) -> None:
+    # This is the common finalization point for local and remote ASC modes:
+    # patch the prep script, report the workdir, and execute or skip CASA.
     prep_script_path = workdir / "prep-ms-for-auto-selfcal.py"
     logger.info("Patching prep script: %s", prep_script_path)
 
@@ -961,6 +970,8 @@ def patch_and_optionally_run(
 
 
 def run_local_mode(args: argparse.Namespace, logger: logging.Logger) -> None:
+    # Local mode requires resolved metadata before workdir naming and MS staging;
+    # it avoids build_ASC.py and uses the supplied measurement set directly.
     ms_input = Path(args.ms_path).expanduser()
     logger.info("Local mode selected with input %s", ms_input)
     metadata_missing = required_missing_metadata(args)
@@ -999,6 +1010,8 @@ def run_local_mode(args: argparse.Namespace, logger: logging.Logger) -> None:
 
 
 def run_remote_mode(args: argparse.Namespace, logger: logging.Logger) -> None:
+    # Remote mode first stages/renames the workdir, then scrapes the staged MS to
+    # fill metadata that could not be inferred safely from the URL.
     if not args.url:
         raise RuntimeError("URL is required for remote mode")
 
@@ -1096,6 +1109,8 @@ def run_remote_mode(args: argparse.Namespace, logger: logging.Logger) -> None:
 
 
 def main() -> None:
+    # Entry-point routing: choose local MS mode when a path exists, otherwise
+    # remote URL mode. Dry-run and missing-metadata cases stop before execution.
     args = normalize_cli_inputs(parse_args())
     logger = configure_logging(args.verbose)
     logger.info("Starting ASC build+prep runner")

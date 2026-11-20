@@ -1,3 +1,9 @@
+"""Compatibility shim exposing the shared interactive auto-image helpers.
+
+Runtime scripts use this module so their imports remain stable while the
+implementation lives in vvisor/runtime/auto_image_selection.py.
+"""
+
 import sys
 from pathlib import Path
 

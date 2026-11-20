@@ -1,3 +1,10 @@
+"""Extract ASC metadata and image options from a CASA Measurement Set.
+
+Casacore/pyrap are preferred; a CASA executable is a fallback for environments
+where table bindings are unavailable. Target-state and target-field tables are
+used to keep auto-image selections tied to the science source.
+"""
+
 import argparse
 import json
 import re
@@ -9,6 +16,8 @@ from pathlib import Path
 from auto_image_selection import build_image_options
 
 try:
+    # Prefer native table bindings, but retain a CASA subprocess fallback for
+    # environments that expose the casa executable without Python table modules.
     import casacore.tables as ct
     TABLE_BACKEND = "casacore"
 except ImportError:
@@ -72,6 +81,7 @@ def parse_args():
 
 
 def is_ms_dir(path):
+    # Recognize a conventional .ms suffix or a raw CASA-table directory layout.
     path = Path(path)
     if not path.is_dir():
         return False
@@ -415,6 +425,8 @@ def read_extracted_metadata_from_workdir(ms_path):
 
 
 def extract_ms_target_field_names(ms_path):
+    # Target intent is resolved from MS FIELD/STATE/MAIN relationships; field names
+    # remain a fallback when intent metadata is incomplete or unavailable.
     field_table = state_table = main_table = None
     try:
         field_table = open_ms_table(ms_path, "FIELD")
@@ -708,6 +720,8 @@ def _is_target_intent(value):
 
 
 def resolve_target_spw_ids(field_names, main_rows, state_modes, data_description_spws, target_name=None):
+    # Prefer OBSERVE_TARGET/target states, then an exact normalized target-field
+    # name. Ambiguous intent is rejected rather than silently imaging calibrators.
     target_state_ids = {
         state_id
         for state_id, mode in enumerate(state_modes)
@@ -904,6 +918,8 @@ def read_target_spw_ids_from_tables(ms_path, target_name=None):
 
 
 def read_spectral_windows_with_casa(ms_path, casa_executable, target_name=None):
+    # CASA fallback emits a marker-delimited JSON payload to separate metadata
+    # from normal CASA log noise. Parse only that payload and validate its types.
     marker = "AUTO_IMAGE_METADATA="
     casa_code = (
         "from casatools import table\n"
@@ -1019,6 +1035,8 @@ def read_spectral_windows_with_casa(ms_path, casa_executable, target_name=None):
 
 
 def main():
+    # CLI dispatch selects the native or CASA-backed metadata/image path and emits
+    # JSON or plain text according to the caller's requested format.
     args = parse_args()
     ms_path = find_ms_directory(Path(args.mspath))
     if ms_path is None:

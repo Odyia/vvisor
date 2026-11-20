@@ -1,3 +1,10 @@
+"""Stage a CB observation and prepare the downstream CASA/CB workdir.
+
+This script handles local/remote SDM-BDF inputs, archives or directory listings,
+template copying, CASA script patching, and auto-image configuration. The
+orchestration wrapper run_build_and_prep_CB.py decides whether it is submitted.
+"""
+
 import argparse
 import json
 import logging
@@ -16,6 +23,8 @@ from auto_image_selection import prompt_for_image_options
 
 
 def patch_auto_image_output_directory(auto_image_dir: Path) -> None:
+    # Patch only the copied workdir scripts, leaving the repository template intact.
+    # This adapts output paths and image-size subdirectories to vvisor conventions.
     helper_path = auto_image_dir / "helper_functions.py"
     run_path = auto_image_dir / "run-auto-image.py"
     helper_text = helper_path.read_text(encoding="utf-8")
@@ -436,6 +445,8 @@ def parse_args() -> argparse.Namespace:
 
 
 def resolve_observation_dir_from_local_input(input_path: Path, temp_dir: Path) -> Path:
+    # Local input may already be an extraction or may be a tar file that needs
+    # staging. Both paths converge on one observation* directory.
     if input_path.is_dir():
         found = find_observation_subdir_in_path(input_path)
         if found:
@@ -462,6 +473,8 @@ def resolve_observation_dir_from_local_input(input_path: Path, temp_dir: Path) -
 
 
 def resolve_observation_dir_from_remote(url: str, temp_dir: Path, logger: logging.Logger, quiet: bool = False) -> Path:
+    # Prefer a direct tar payload or directory listing in that order. Directory
+    # listings must contain an observation* node; otherwise the source is rejected.
     if is_tar_url(url):
         tar_name = Path(url).name or "remote.tar"
         tar_path = temp_dir / tar_name
@@ -508,6 +521,8 @@ def stage_observation_contents(
     object_name: str,
     observation_date: str,
 ) -> str:
+    # Normalize the staged ASDM location to mySDM so the existing CASA script and
+    # templates can use a stable relative path regardless of source nesting.
     observation_name = "mySDM"
     destination = workdir_path / observation_name
 
@@ -568,6 +583,8 @@ def read_sdm_bdf_image_options(
 
 
 def main() -> None:
+    # Main stage: validate metadata, stage the ASDM, copy templates, and generate
+    # expected paths/config before the workdir is handed to prep and submission.
     args = parse_args()
     logger = configure_logging(args.verbose, args.quiet)
 

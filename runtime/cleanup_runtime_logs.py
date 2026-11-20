@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
 
+"""Archive post-run runtime artifacts into timestamped log bundles.
+
+This utility is the final cleanup surface for Slurm and metadata files. It moves
+loose files rather than deleting them, and uses filename groups to keep multiple
+pipeline runs recognizable.
+"""
+
 import argparse
 import re
 import shutil
@@ -32,6 +39,7 @@ def safe_slug(text: str) -> str:
 
 
 def move_if_exists(src: Path, dst: Path) -> bool:
+    # Preserve rather than overwrite an existing artifact with the same name.
     if not src.exists():
         return False
     dst.parent.mkdir(parents=True, exist_ok=True)
@@ -50,6 +58,8 @@ def collect_files(base_dir: Path, patterns: list) -> list:
 
 
 def main() -> None:
+    # Cleanup is best-effort archival: it creates one run bundle and moves any
+    # matching metadata, Slurm, build, or product artifacts it finds.
     args = parse_args()
     runtime_dir = Path(__file__).resolve().parent
     project_root = Path(args.root_dir).resolve() if args.root_dir else runtime_dir.parent

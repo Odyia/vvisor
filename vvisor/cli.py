@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
 
+"""Command-line orchestration for CB, ASC, and auto-image workflows.
+
+This module owns workflow routing and cluster integration: it validates inputs,
+prepares workdirs, launches wrapped scripts, and coordinates Slurm dependencies.
+The underlying calibration and imaging implementations live in runtime/ and
+repo/auto-image-VLA rather than in this entrypoint.
+"""
+
 import argparse
 import codecs
 from collections import deque
@@ -20,6 +28,8 @@ from .runtime.auto_image_selection import prompt_for_image_options
 
 
 def project_root_dir() -> Path:
+    # Prefer the checkout containing the wrappers, templates, and runtime scripts;
+    # fall back to the caller's directory when vvisor is imported or installed elsewhere.
     source_root = Path(__file__).resolve().parents[1]
     required_paths = (
         Path("runtime") / "run_build_and_prep_ASC.py",
@@ -40,6 +50,8 @@ def project_root_dir() -> Path:
 
 
 def parse_args():
+    # Centralize all public CLI behavior here so downstream workflow functions
+    # receive normalized argparse values instead of implementing their own parsing.
     parser = argparse.ArgumentParser(
         description=(
             "Run CB, ASC, or CB->ASC calibration workflows from one entrypoint."
@@ -344,6 +356,8 @@ def is_remote_url(value: str) -> bool:
 
 
 def probe_remote_url_type(url: str, max_depth: int = 8, max_dirs: int = 600) -> str:
+    # This is a bounded, best-effort directory-tree scan used to catch likely
+    # CB/ASC mismatches early. It intentionally tolerates individual HTTP failures.
     queue = deque([(url.rstrip("/"), 0)])
     visited = set()
     saw_cb_hint = False
@@ -479,6 +493,8 @@ def validate_url_for_pipeline(
     quiet: bool = False,
     allow_url_type_mismatch: bool = False,
 ) -> None:
+    # Remote sources are easy to misclassify, so validate pipeline/source compatibility
+    # before starting downloads or jobs. The explicit bypass is for ambiguous mirrors.
     if not url or not is_remote_url(url):
         return
 
@@ -540,6 +556,8 @@ def validate_url_for_pipeline(
 
 
 def is_ms_dir(path: Path) -> bool:
+    # Accept both a conventional .ms directory and an extracted CASA table directory;
+    # the latter is useful for partially staged or alternate measurement-set layouts.
     if not path.is_dir():
         return False
     if path.suffix == ".ms":
@@ -549,6 +567,8 @@ def is_ms_dir(path: Path) -> bool:
 
 
 def find_ms_directory(root_dir: Path) -> Optional[Path]:
+    # Resolution order is deterministic: direct match, immediate child, then the
+    # first recursive .ms match. Callers should still verify the result is usable.
     root_dir = Path(root_dir)
     if is_ms_dir(root_dir):
         return root_dir
@@ -590,6 +610,8 @@ def resolve_existing_path(path_value: str, script_dir: Path) -> Path:
 
 
 def copy_tree(src: Path, dst: Path) -> None:
+    # Template copying is intentionally destructive for matching destination directories
+    # so a reused workdir receives a fresh copy instead of stale template files.
     src = Path(src)
     dst = Path(dst)
 
@@ -629,6 +651,8 @@ def write_auto_image_config(
     image_size: int,
     split: str,
 ) -> None:
+    # Bootstrap from the repository template rather than constructing a config from
+    # scratch, preserving any upstream defaults not explicitly managed here.
     config_example = auto_image_dir / "config.example.yaml"
     config_target = auto_image_dir / "config.yaml"
 
@@ -715,6 +739,8 @@ def read_auto_image_config_value(config_path: Path, key: str, default: str) -> s
 
 
 def patch_auto_image_output_directory(auto_image_dir: Path) -> None:
+    # The bundled auto-image scripts predate some vvisor-specific output and image-label
+    # conventions. Patch copies in each workdir so source templates remain unchanged.
     helper_path = auto_image_dir / "helper_functions.py"
     run_path = auto_image_dir / "run-auto-image.py"
 
@@ -770,6 +796,8 @@ def patch_auto_image_output_directory(auto_image_dir: Path) -> None:
 
 
 def ensure_auto_image_selection_support(auto_image_dir: Path) -> None:
+    # When interactive image selection is requested, ensure the workdir copy includes
+    # the target-aware SPW and saved-selection code; fail loudly if its template shape changed.
     helper_path = auto_image_dir / "helper_functions.py"
     run_path = auto_image_dir / "run-auto-image.py"
     source_helper_path = (
@@ -897,6 +925,8 @@ def filter_image_options(df_store, selected_images):
 
 
 def read_auto_image_source_name(args: argparse.Namespace, script_dir: Path, ms_path: Path) -> str:
+    # Explicit CLI metadata wins, otherwise the ASC scraper is authoritative. This keeps
+    # source names consistent for both local bootstrap and remote ASC staging.
     if args.auto_image_source_name:
         return args.auto_image_source_name
     if args.asc_source_name:
@@ -1016,6 +1046,8 @@ def bootstrap_auto_image_workdir(
 
 
 def run_subprocess(command, cwd: Path, quiet: bool = False, verbose: bool = False) -> subprocess.CompletedProcess:
+    # Stream wrapped-script output while still retaining the complete result for
+    # log parsing and error reporting. Quiet mode delays noise but preserves failures.
     if verbose and not quiet:
         print("Running:")
         print(" ".join(str(arg) for arg in command), flush=True)
@@ -1114,6 +1146,8 @@ def parse_state_token(state_value: str) -> str:
 
 
 def get_slurm_job_state(job_id: str) -> str:
+    # sacct is authoritative when accounting rows are available because it can expose
+    # terminal failures; squeue is a fallback for pending jobs and accounting gaps.
     sacct_cmd = ["sacct", "-j", str(job_id), "--format=State", "--noheader", "--parsable2"]
     try:
         sacct_result = subprocess.run(
@@ -1190,6 +1224,8 @@ def get_slurm_job_state(job_id: str) -> str:
 
 
 def wait_for_slurm_job_completion(job_id: str, poll_seconds: int, quiet: bool = False) -> None:
+    # Optional synchronous mode waits for CB success/failure before continuing with ASC.
+    # The default workflow avoids this blocking wait and submits an afterok dependency.
     success_states = {"COMPLETED"}
     failure_states = {"FAILED", "CANCELLED", "TIMEOUT", "OUT_OF_MEMORY", "NODE_FAIL", "PREEMPTED"}
 
@@ -1209,6 +1245,8 @@ def wait_for_slurm_job_completion(job_id: str, poll_seconds: int, quiet: bool = 
 
 
 def archive_old_slurm_artifacts(script_dir: Path, quiet: bool = False) -> int:
+    # Before a chained submission, isolate prior submit/Slurm files so stale outputs
+    # cannot be mistaken for the newly submitted workflow.
     script_dir = Path(script_dir)
     candidates = []
     patterns = [
@@ -1312,6 +1350,8 @@ def submit_post_job_cleanup(args: argparse.Namespace, after_job_id: str, jobname
 
 
 def stage_remote_ms_for_auto_image(args: argparse.Namespace, source_url: str):
+    # Remote auto-image input is staged by the ASC remote wrapper: it downloads,
+    # extracts/prepares the data, and reports the workdir that contains the .ms.
     args.asc_no_casa = True
     result = run_asc_remote_workflow(args, source_url)
     if result is None:
@@ -1329,6 +1369,8 @@ def stage_remote_ms_for_auto_image(args: argparse.Namespace, source_url: str):
 
 
 def write_auto_image_submit_script(workdir: Path, auto_image_dir: Path, casa_executable: str) -> Path:
+    # Generate the standalone Slurm launcher beside the workdir. The script installs
+    # pandas in CASA's environment before running the version of the imaging pipeline copied locally.
     workdir = workdir.resolve()
     auto_image_dir = auto_image_dir.resolve()
     job_name = f"AutoImage-{workdir.name}"
@@ -1383,6 +1425,8 @@ def write_auto_image_submit_script(workdir: Path, auto_image_dir: Path, casa_exe
 
 
 def run_auto_image_workflow(args: argparse.Namespace, source_url: Optional[str] = None) -> None:
+    # Resolve three possible starting states: remote staging, an existing workdir,
+    # or a local .ms used to bootstrap a new workdir. Later steps share the same config/run path.
     script_dir = project_root_dir()
 
     if source_url:
@@ -1559,6 +1603,8 @@ def list_cb_workdirs(script_dir: Path):
 
 
 def run_cb_workflow(args: argparse.Namespace) -> Tuple[Path, Optional[str]]:
+    # Build/prep CB, optionally skip that stage for an existing workdir, and return
+    # both the workdir and last submitted job id needed by downstream chaining.
     script_dir = project_root_dir()
     cb_script = script_dir / "runtime" / "run_build_and_prep_CB.py"
     if not cb_script.exists():
@@ -1646,6 +1692,8 @@ def run_cb_workflow(args: argparse.Namespace) -> Tuple[Path, Optional[str]]:
 
 
 def run_asc_workflow(args: argparse.Namespace, ms_path: Path) -> None:
+    # Local ASC work receives a resolved measurement set and delegates preparation,
+    # CASA execution, and optional job submission to the runtime wrapper.
     script_dir = project_root_dir()
     asc_script = script_dir / "runtime" / "run_build_and_prep_ASC.py"
     if not asc_script.exists():
@@ -1712,6 +1760,8 @@ def build_asc_local_command(args: argparse.Namespace, ms_path: Path, script_dir:
 
 
 def submit_dependent_asc_job(args: argparse.Namespace, cb_workdir: Path, cb_final_job_id: str) -> str:
+    # This is the main CB->ASC handoff: submit a separate Slurm step gated on the
+    # successful completion of CB, rather than making this CLI process wait locally.
     script_dir = project_root_dir()
     # Fallback cleanup before run in case post-job cleanup submission fails.
     archive_old_slurm_artifacts(script_dir, quiet=args.quiet)
@@ -1819,6 +1869,8 @@ def run_asc_remote_workflow(
 
 
 def require_sbatch_for_submission(args: argparse.Namespace) -> None:
+    # Fail before dispatching any workflow if a selected mode needs sbatch but the
+    # cluster tools are unavailable; this avoids partial setup and misleading dry-run success.
     if args.dry_run:
         return
 
@@ -1853,6 +1905,9 @@ def require_sbatch_for_submission(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
+    # Entry-point dispatch: normalize and validate global options once, then route
+    # to one of the pipeline implementations. Combined CB->ASC handling remains here
+    # because it depends on the final CB job id.
     args = normalize_cli_inputs(parse_args())
     pipeline = args.pipeline
     source_url = resolve_source_url(args)

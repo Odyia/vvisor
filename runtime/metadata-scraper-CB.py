@@ -1,3 +1,10 @@
+"""Extract CB metadata and image options from an extracted SDM-BDF tree.
+
+This script reads ASDM XML instead of relying on a path naming convention.
+It is used by orchestration code for project/object/date inference and target-SPW
+selection before auto-image configuration is written.
+"""
+
 import argparse
 import json
 import re
@@ -53,6 +60,8 @@ def normalize_date_token(token):
 
 
 def infer_metadata_from_path(ms_path, project_code_override=None):
+    # A path is reliable for project code, but object/date fields are deliberately
+    # not guessed because SDM XML is the authoritative source for those values.
     project_code = project_code_override
     segments = [Path(seg).name for seg in Path(ms_path).parents] + [Path(ms_path).name]
 
@@ -460,6 +469,8 @@ def extract_sdm_bdf_project_code(root, project_code_override=None):
 
 
 def extract_sdm_bdf_metadata(root, project_code_override=None):
+    # Require all three values for a buildable CB identity; a project override does
+    # not bypass missing object/date data inferred from the SDM content.
     root = Path(root)
     if not root.exists():
         raise FileNotFoundError(f"SDM-BDF path not found: {root}")
@@ -486,6 +497,8 @@ def extract_metadata(root, project_code_override=None):
 
 
 def extract_sdm_bdf_image_options(root, split="both", target_name=None):
+    # Map ASDM spectral-window identities to the numeric SPW IDs used in the
+    # downstream image builder, preferring rows that belong to the requested target.
     spectral_window_file = find_xml_file(root, "SpectralWindow.xml")
     if spectral_window_file is None:
         raise FileNotFoundError(f"SpectralWindow.xml not found under SDM-BDF path: {root}")
@@ -531,6 +544,7 @@ def extract_sdm_bdf_image_options(root, split="both", target_name=None):
 
 
 def main():
+    # CLI dispatch either emits three metadata fields or a JSON list of image options.
     args = parse_args()
     if args.include_image_options:
         output = {

@@ -1,3 +1,10 @@
+"""Stage remote ASC Measurement Sets and copy the ASC template into a workdir.
+
+This is the low-level data/download builder. It discovers .ms directories,
+supports tar fallbacks, stages the first usable MS, and patches the prep scripts.
+The higher-level runner decides metadata resolution and CASA execution.
+"""
+
 import argparse
 import logging
 import re
@@ -134,6 +141,8 @@ def fetch_directory_links(url: str, logger: logging.Logger) -> List[str]:
 
 
 def find_first_ms_dir(url: str, logger: logging.Logger, visited: Optional[Set[str]] = None) -> Optional[Tuple[str, str]]:
+    # Recursively locate the first .ms URL with bounded state from the visited set.
+    # It may encounter directory listings with ambiguous or inaccessible nodes.
     if visited is None:
         visited = set()
     if url in visited:
@@ -171,6 +180,8 @@ def collect_all_files_from_directory(
     all_files: Optional[List[Tuple[str, str]]] = None,
     visited: Optional[Set[str]] = None,
 ) -> List[Tuple[str, str]]:
+    # Recursively collect downloadable files while preventing URL cycles and
+    # retaining paths relative to the supplied base URL.
     if all_files is None:
         all_files = []
     if visited is None:
@@ -208,6 +219,8 @@ def download_files(
     fail_on_download_error: bool = True,
     quiet: bool = False,
 ) -> None:
+    # Download is all-or-partial based on the CLI policy. Full MS runs should keep
+    # fail-on-error enabled because a missing table is unsafe to calibrate silently.
     total_files = len(all_files)
     print(f"Found {total_files} files to download")
     failed_files: List[Tuple[Path, str]] = []
@@ -277,6 +290,8 @@ def stage_first_ms(
     workdir_name: str,
     logger: logging.Logger,
 ) -> Tuple[Path, Optional[str], Optional[str]]:
+    # Normalize the staged .ms name and record only metadata that can be inferred
+    # from its path. Object name remains for later CASA/table metadata resolution.
     if not ms_dirs:
         raise RuntimeError("No measurement set directory was found in the downloaded content.")
 
@@ -368,6 +383,8 @@ def choose_tar_source(url: str, workdir_path: Path, logger: logging.Logger, quie
 
 
 def copy_tree(src: Path, dst: Path, logger: logging.Logger) -> None:
+    # Templates are copied into an existing workdir; source control and lock files
+    # are excluded, while copy failures are surfaced as warnings instead of partial crashes.
     src = Path(src)
     dst = Path(dst)
 
@@ -427,6 +444,8 @@ def write_extracted_metadata(
 
 
 def patch_prep_script(prep_script: Path, ms_name: str, object_name: str, a_config: bool) -> None:
+    # Patch the stable prep-script keys when present, with A_config insertion as
+    # a compatibility fallback for older ASC templates.
     if not prep_script.exists():
         print(f"Warning: {prep_script} not found.")
         return
@@ -496,6 +515,8 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    # Build stage: discover or download an MS, stage it under a stable workdir name,
+    # copy the template, and patch the prep/cleanup scripts for this run.
     args = parse_args()
     logger = configure_logging(args.verbose, args.quiet)
 

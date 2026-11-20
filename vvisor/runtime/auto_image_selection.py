@@ -1,3 +1,10 @@
+"""Helpers for converting Measurement Set spectral windows into selectable auto-image products.
+
+This module is deliberately independent of CASA and Slurm. It supplies canonical
+VLA band names, grouped SPW options, and an interactive prompt that writes the
+user's selection for the downstream auto-image configuration.
+"""
+
 import re
 import textwrap
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
@@ -23,6 +30,8 @@ _BAND_RANGES_GHZ = (
 
 
 def band_for_frequency(frequency_hz: float, name: str = "") -> Optional[str]:
+    # CASA spectral-window names usually preserve a VLA band label. Use that
+    # label first because it is more reliable than the center-frequency boundary.
     match = re.match(r"(EVLA_(?:L|S|C|X|Ku|K|Ka|Q))#", name, re.IGNORECASE)
     if match:
         canonical_bands = {
@@ -51,11 +60,16 @@ def build_image_options(
     single_band: Optional[str] = None,
     target_spw_ids: Optional[Iterable[int]] = None,
 ) -> List[dict]:
+    # Build stable image-product definitions from the raw SPW list. Filtering,
+    # grouping, averaging, and sorting all happen here so prompting only presents
+    # a final, user-readable set of choices.
     windows = list(spectral_windows)
     if split not in {"whole", "halves", "both"}:
         raise ValueError(f"Unsupported auto-image split value: {split}")
 
     bands: Dict[str, List[Tuple[int, str, float]]] = {}
+    # Target-name filtering may reduce a listobs table to source-specific SPWs;
+    # without it, all observed SPWs remain candidates.
     target_ids = None if target_spw_ids is None else {int(spw_id) for spw_id in target_spw_ids}
     windows_to_use = (
         windows
@@ -73,6 +87,7 @@ def build_image_options(
     for band, band_windows in bands.items():
         band_windows.sort(key=lambda window: (window[2], window[0]))
         count = len(band_windows)
+        # Odd SPW counts assign the extra window to the upper half.
         lower = band_windows[: count // 2]
         upper = band_windows[count // 2 :]
         groups = []
@@ -108,6 +123,9 @@ def build_image_options(
 
 
 def _prompt_for_manual_image_options(options: Sequence[dict]) -> List[dict]:
+    # Manual mode is for custom groups that do not align with the generated whole-
+    # band or split-band products. Preserve SPW details so validation and output
+    # can reference exact IDs and frequencies.
     available_spws = {}
     for option in options:
         for spw in option.get("spw_details", []):
@@ -167,6 +185,8 @@ def _prompt_for_manual_image_options(options: Sequence[dict]) -> List[dict]:
         except ValueError:
             spw_ids = []
 
+        # Reject malformed, repeated, unknown, or cross-band selections before
+        # adding an image so every manual group remains safe to consume downstream.
         if not spw_ids or len(spw_ids) != len(set(spw_ids)):
             print("Enter distinct SPW IDs/ranges, such as '2~10,12'.")
             continue
@@ -200,6 +220,8 @@ def _prompt_for_manual_image_options(options: Sequence[dict]) -> List[dict]:
 
 
 def prompt_for_image_options(options: Sequence[dict]) -> List[dict]:
+    # This is the final interactive gate: display generated products, accept
+    # an explicit subset/all/manual choice, and normalize the result once.
     if not options:
         raise RuntimeError("No supported VLA bands or frequency groups were found in the dataset metadata.")
 
