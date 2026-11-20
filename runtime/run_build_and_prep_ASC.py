@@ -44,6 +44,13 @@ def _safe_slug(value: Optional[str]) -> str:
     return cleaned or "unknown"
 
 
+def positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return parsed
+
+
 def write_metadata_log(kind: str, metadata: dict, logger: Optional[logging.Logger] = None, source: Optional[str] = None) -> None:
     # Metadata snapshots are diagnostics, so logging failures warn and continue.
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -125,6 +132,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--use_single_freq", action="store_true", help="Set use_single_freq=True in prep script")
     parser.add_argument("--single_freq", type=int, default=9, help="Single frequency when use_single_freq=True")
     parser.add_argument("--auto_sc_dir", default=None, help="Optional auto_selfcal repo path for prep script")
+    parser.add_argument("--asc-sbatch-time", help="Slurm wall-time request for each generated ASC self-calibration job")
+    parser.add_argument("--asc-sbatch-mem", help="Slurm memory request for each generated ASC self-calibration job")
+    parser.add_argument(
+        "--asc-sbatch-cpus",
+        type=positive_int,
+        help="CPU task count per node for each generated ASC self-calibration job (--ntasks-per-node)",
+    )
 
     parser.add_argument(
         "--run-casa",
@@ -539,6 +553,9 @@ def patch_prep_script(
     single_freq: int,
     a_config: bool,
     auto_sc_dir: Optional[str],
+    slurm_time: Optional[str] = None,
+    slurm_mem: Optional[str] = None,
+    slurm_cpus: Optional[int] = None,
 ) -> None:
     if not prep_path.exists():
         raise FileNotFoundError(f"Prep script not found at {prep_path}")
@@ -552,6 +569,9 @@ def patch_prep_script(
         "use_single_freq": r"^use_single_freq\s*=.*$",
         "single_freq": r"^single_freq\s*=.*$",
         "A_config": r"^A_config\s*=.*$",
+        "slurm_time": r"^slurm_time\s*=.*$",
+        "slurm_mem": r"^slurm_mem\s*=.*$",
+        "slurm_cpus": r"^slurm_cpus\s*=.*$",
         "auto_sc_files_directory": r"^auto_sc_files_directory\s*=.*$",
     }
 
@@ -564,6 +584,9 @@ def patch_prep_script(
         "use_single_freq": f"use_single_freq = {str(use_single_freq)}",
         "single_freq": f"single_freq = {single_freq}",
         "A_config": f"A_config = {str(a_config)}  # Set to True to use special resources for L band",
+        "slurm_time": f"slurm_time = {slurm_time!r}",
+        "slurm_mem": f"slurm_mem = {slurm_mem!r}",
+        "slurm_cpus": f"slurm_cpus = {slurm_cpus!r}",
     }
 
     lines = prep_path.read_text(encoding="utf-8").splitlines()
@@ -951,6 +974,9 @@ def patch_and_optionally_run(
         single_freq=args.single_freq,
         a_config=args.a_config,
         auto_sc_dir=args.auto_sc_dir,
+        slurm_time=args.asc_sbatch_time,
+        slurm_mem=args.asc_sbatch_mem,
+        slurm_cpus=args.asc_sbatch_cpus,
     )
 
     logger.info("Prep script patched")

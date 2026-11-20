@@ -152,6 +152,11 @@ For an A-configuration ASC run, use `--a-config`. This adjusts L/S-band resource
 ```
 python vvisor.py --pipeline asc --url 'your-link-goes-here' --a-config
 ```
+The generated per-band self-calibration jobs use the pipeline's default Slurm requests unless overridden with `--asc-sbatch-time`, `--asc-sbatch-mem`, and `--asc-sbatch-cpus`. The CPU option sets `--ntasks-per-node`; each job still requests one node. For example:
+```
+python vvisor.py --pipeline asc --url 'your-link-goes-here' --asc-sbatch-time 3-00:00:00 --asc-sbatch-mem 160G --asc-sbatch-cpus 12
+```
+Without these options, the existing defaults remain: 7 days, 128G, and 8 tasks per node for regular runs; A-configuration L/S-band jobs use 14 days, 200G, and 6 tasks per node.
 If the dataset is misidentified as CB/SDM-BDF rather than ASC, you can override this check with `--allow-url-type-mismatch`. This applies only to URL inputs. Local paths bypass remote URL scanning but still need the required dataset structure (for example, an `.ms` or `ASDM.xml`). The selected pipeline still requires compatible data.
 
 If you already ran CB and now want ASC, point to the directory instead of giving a URL. This also works for running ASC on any local `.ms`:
@@ -369,6 +374,15 @@ Frequency index to use when `--asc-use-single-freq` is set. Without that flag, A
 
 `--a-config`
 Enable `A_config` in the ASC prep script. This increases the memory request and reduces the core count for lower frequencies to improve the chance of completion.
+
+`--asc-sbatch-time`
+Optional Slurm wall-time request for each generated ASC self-calibration job, e.g. `3-00:00:00`. Overrides the default for the selected configuration.
+
+`--asc-sbatch-mem`
+Optional Slurm memory request for each generated ASC self-calibration job, e.g. `160G`. Overrides the default for the selected configuration.
+
+`--asc-sbatch-cpus`
+Optional positive integer CPU task count per node for each generated ASC self-calibration job. Sets `--ntasks-per-node`; each job still requests one node and the value overrides the default for the selected configuration.
 
 `--asc-auto-sc-dir`
 Optional auto_selfcal repository path for ASC prep instead of using internal repo of auto_selfcal

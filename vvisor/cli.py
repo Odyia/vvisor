@@ -49,6 +49,13 @@ def project_root_dir() -> Path:
     )
 
 
+def positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return parsed
+
+
 def parse_args():
     # Centralize all public CLI behavior here so downstream workflow functions
     # receive normalized argparse values instead of implementing their own parsing.
@@ -204,6 +211,22 @@ def parse_args():
         default="both",
         choices=["whole", "halves", "both"],
         help="ASC band split strategy: whole, halves, or both (default: both).",
+    )
+    parser.add_argument(
+        "--asc-sbatch-time",
+        help="Slurm wall-time request for each generated ASC self-calibration job (overrides the A-config default).",
+    )
+    parser.add_argument(
+        "--asc-sbatch-mem",
+        help="Slurm memory request for each generated ASC self-calibration job (overrides the A-config default).",
+    )
+    parser.add_argument(
+        "--asc-sbatch-cpus",
+        type=positive_int,
+        help=(
+            "CPU task count per node for each generated ASC self-calibration job "
+            "(sets --ntasks-per-node; overrides the A-config default)."
+        ),
     )
     parser.add_argument(
         "--asc-use-single-band",
@@ -1732,6 +1755,12 @@ def build_asc_local_command(args: argparse.Namespace, ms_path: Path, script_dir:
         cmd.extend(["--source_name", args.asc_source_name])
     if args.asc_split_band:
         cmd.extend(["--split_band", args.asc_split_band])
+    if args.asc_sbatch_time is not None:
+        cmd.extend(["--asc-sbatch-time", args.asc_sbatch_time])
+    if args.asc_sbatch_mem is not None:
+        cmd.extend(["--asc-sbatch-mem", args.asc_sbatch_mem])
+    if args.asc_sbatch_cpus is not None:
+        cmd.extend(["--asc-sbatch-cpus", str(args.asc_sbatch_cpus)])
     if args.asc_use_single_band:
         cmd.append("--use_single_band")
         cmd.extend(["--single_band", args.asc_single_band])
@@ -1839,6 +1868,12 @@ def run_asc_remote_workflow(
         cmd.extend(["--source_name", args.asc_source_name])
     if args.asc_split_band:
         cmd.extend(["--split_band", args.asc_split_band])
+    if args.asc_sbatch_time is not None:
+        cmd.extend(["--asc-sbatch-time", args.asc_sbatch_time])
+    if args.asc_sbatch_mem is not None:
+        cmd.extend(["--asc-sbatch-mem", args.asc_sbatch_mem])
+    if args.asc_sbatch_cpus is not None:
+        cmd.extend(["--asc-sbatch-cpus", str(args.asc_sbatch_cpus)])
     if args.asc_use_single_band:
         cmd.append("--use_single_band")
         cmd.extend(["--single_band", args.asc_single_band])

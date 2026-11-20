@@ -19,6 +19,9 @@ single_band = "EVLA_C"
 use_single_freq = False
 single_freq = 9
 A_config = False  # Set to True to use special resources for L band
+slurm_time = None
+slurm_mem = None
+slurm_cpus = None
 
 
 def load_slurm_mail_config():
@@ -737,6 +740,13 @@ for i in range(len(split_ms_directories)):
         mem = '128G'
         cores = 8
         tim = '7-0:0:0'  # Request 7 days for other bands/configurations
+
+    if slurm_time is not None:
+        tim = slurm_time
+    if slurm_mem is not None:
+        mem = slurm_mem
+    if slurm_cpus is not None:
+        cores = slurm_cpus
 
     job_script_content = f"""#!/bin/bash
     
